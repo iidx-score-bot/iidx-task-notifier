@@ -1,4 +1,6 @@
 import os
+import random
+
 from flask import Flask, request, abort
 from supabase import create_client
 from linebot.v3 import WebhookHandler
@@ -26,9 +28,11 @@ supabase_key = os.environ["SUPABASE_SECRET_KEY"]
 
 supabase = create_client(supabase_url, supabase_key)
 
+
 @app.route("/", methods=["GET"])
 def home():
     return "弐寺Bot is running!"
+
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -43,8 +47,9 @@ def callback():
 
     return "OK"
 
+
 def get_task_song():
-    # STEP 1：課題曲を取得
+    # 最新の課題曲を取得
     task_response = (
         supabase.table("tasks")
         .select("chart_id,task_date,note")
@@ -59,7 +64,7 @@ def get_task_song():
 
     task = task_response.data[0]
 
-    # STEP 2：譜面情報を取得
+    # 譜面情報を取得
     chart_response = (
         supabase.table("charts")
         .select("song_id,play_style,difficulty,level")
@@ -73,7 +78,7 @@ def get_task_song():
 
     chart = chart_response.data[0]
 
-    # STEP 3：楽曲情報を取得
+    # 楽曲情報を取得
     song_response = (
         supabase.table("songs")
         .select("title,artist")
@@ -87,8 +92,7 @@ def get_task_song():
 
     song = song_response.data[0]
 
-    # LINEに送るメッセージを作成
-    reply_text = (
+    return (
         "【弐寺Bot 課題曲】\n\n"
         f"曲名：{song['title']}\n"
         f"アーティスト：{song['artist']}\n"
@@ -98,7 +102,45 @@ def get_task_song():
         f"メモ：{task['note'] or 'なし'}"
     )
 
-    return reply_text
+
+def get_random_song():
+    # 登録されている譜面を取得
+    chart_response = (
+        supabase.table("charts")
+        .select("id,song_id,play_style,difficulty,level")
+        .execute()
+    )
+
+    charts = chart_response.data
+
+    if not charts:
+        return "選曲できる譜面が登録されていません。"
+
+    # 譜面からランダムに1件選ぶ
+    chart = random.choice(charts)
+
+    # 楽曲情報を取得
+    song_response = (
+        supabase.table("songs")
+        .select("title,artist")
+        .eq("id", chart["song_id"])
+        .limit(1)
+        .execute()
+    )
+
+    if not song_response.data:
+        return "選択した譜面に対応する楽曲が見つかりません。"
+
+    song = song_response.data[0]
+
+    return (
+        "【弐寺Bot ランダム選曲】\n\n"
+        f"曲名：{song['title']}\n"
+        f"アーティスト：{song['artist']}\n"
+        f"譜面：{chart['play_style']} {chart['difficulty']}\n"
+        f"レベル：{chart['level']}"
+    )
+
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -108,7 +150,8 @@ def handle_message(event):
         reply_text = (
             "【弐寺Bot コマンド一覧】\n"
             "!ヘルプ：コマンド一覧\n"
-            "!課題曲：課題曲を確認"
+            "!課題曲：現在の課題曲を確認\n"
+            "!課題曲ランダム：ランダムに譜面を選ぶ"
         )
 
     elif user_text == "!課題曲":
@@ -117,6 +160,13 @@ def handle_message(event):
         except Exception:
             app.logger.exception("Supabase task retrieval failed")
             reply_text = "課題曲の取得中にエラーが発生しました。"
+
+    elif user_text == "!課題曲ランダム":
+        try:
+            reply_text = get_random_song()
+        except Exception:
+            app.logger.exception("Random song retrieval failed")
+            reply_text = "ランダム選曲中にエラーが発生しました。"
 
     else:
         return
