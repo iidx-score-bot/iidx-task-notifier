@@ -1,10 +1,13 @@
 import os
 import random
+import logging
 
 from flask import Flask, request, abort
 from supabase import create_client
+
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
+
 from linebot.v3.messaging import (
     Configuration,
     ApiClient,
@@ -12,241 +15,413 @@ from linebot.v3.messaging import (
     ReplyMessageRequest,
     TextMessage,
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+
+from linebot.v3.webhooks import (
+    MessageEvent,
+    TextMessageContent,
+)
+
+
+# ==================================================
+# 基本設定
+# ==================================================
 
 app = Flask(__name__)
 
-# LINEの接続設定
-channel_secret = os.environ["LINE_CHANNEL_SECRET"]
-channel_access_token = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-handler = WebhookHandler(channel_secret)
 
-# Supabaseの接続設定
-supabase_url = os.environ["SUPABASE_URL"]
-supabase_key = os.environ["SUPABASE_SECRET_KEY"]
+# ==================================================
+# 環境変数
+# Renderの Environment に設定する
+# ==================================================
 
-supabase = create_client(supabase_url, supabase_key)
+LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
+    "LINE_CHANNEL_ACCESS_TOKEN"
+)
 
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
+
+
+# ==================================================
+# LINE / Supabase クライアント
+# ==================================================
+
+if not LINE_CHANNEL_SECRET:
+    raise RuntimeError("LINE_CHANNEL_SECRET が設定されていません")
+
+if not LINE_CHANNEL_ACCESS_TOKEN:
+    raise RuntimeError(
+        "LINE_CHANNEL_ACCESS_TOKEN が設定されていません"
+    )
+
+if not SUPABASE_URL:
+    raise RuntimeError("SUPABASE_URL が設定されていません")
+
+if not SUPABASE_SECRET_KEY:
+    raise RuntimeError("SUPABASE_SECRET_KEY が設定されていません")
+
+
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+configuration = Configuration(
+    access_token=LINE_CHANNEL_ACCESS_TOKEN
+)
+
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_SECRET_KEY,
+)
+
+
+# ==================================================
+# ホーム画面
+# ==================================================
 
 @app.route("/", methods=["GET"])
 def home():
-    return "弐寺Bot is running!"
+    return "IIDX Task Bot is running!"
+
+
+# ==================================================
+# LINE Webhook
+# ==================================================
 
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
 
-    app.logger.info("LINE webhook received")
+    logger.info("LINE webhook received")
 
     try:
         handler.handle(body, signature)
+
     except InvalidSignatureError:
-        app.logger.warning("LINE signature verification failed")
+        logger.exception("LINE signature validation failed")
         abort(400)
+
     except Exception:
-        app.logger.exception("LINE webhook processing failed")
+        logger.exception("LINE webhook processing failed")
         abort(500)
 
     return "OK"
 
 
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event):
-    # イベントの送信元をログに出力
-    app.logger.info("SOURCE_TYPE: %s", event.source.type)
+# ==================================================
+# LINEへの返信
+# ==================================================
 
-    if event.source.type == "group":
-        app.logger.info(
-            "LINE_GROUP_ID: %s",
-            event.source.group_id
-        )
-    elif event.source.type == "room":
-        app.logger.info(
-            "LINE_ROOM_ID: %s",
-            event.source.room_id
-        )
-    elif event.source.type == "user":
-        app.logger.info(
-            "LINE_USER_ID: %s",
-            event.source.user_id
-        )
+def reply_message(reply_token, text):
+    """
+    LINEにテキストメッセージを返信する。
+    """
 
-    user_text = event.message.text.strip()
+    if not reply_token:
+        logger.warning("reply_token がありません")
+        return
 
-    # ここから下は、既存のコマンド処理を残す
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
 
-def get_task_song():
-    # 最新の課題曲を取得
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=reply_token,
+                    messages=[
+                        TextMessage(text=text)
+                    ],
+                )
+            )
+
+        logger.info("LINE reply sent")
+
+    except Exception:
+        logger.exception("LINE reply failed")
+        raise
+
+
+# ==================================================
+# 最新の課題曲を取得
+# ==================================================
+
+def get_task_song(group_id):
+    """
+    指定されたグループの最新課題曲を取得する。
+
+    前提テーブル:
+      tasks
+      charts
+      songs
+
+    tasks に group_id、chart_id、task_date が存在する想定。
+    charts に id、song_id、play_style、level が存在する想定。
+    songs に id、title が存在する想定。
+    """
+
+    if not group_id:
+        return "グループIDを取得できませんでした。"
+
+    # グループの最新課題曲を取得
     task_response = (
         supabase.table("tasks")
-        .select("chart_id,task_date,note")
-        .eq("group_id", "test-group")
+        .select("chart_id, task_date, group_id")
+        .eq("group_id", group_id)
         .order("task_date", desc=True)
         .limit(1)
         .execute()
     )
 
-    if not task_response.data:
-        return "課題曲が登録されていません。"
+    tasks = task_response.data
 
-    task = task_response.data[0]
+    if not tasks:
+        return (
+            "このグループにはまだ課題曲が登録されていません。\n"
+            "課題曲の登録機能は今後追加できます。"
+        )
+
+    task = tasks[0]
+    chart_id = task.get("chart_id")
+
+    if not chart_id:
+        return "課題曲の譜面IDが登録されていません。"
 
     # 譜面情報を取得
     chart_response = (
         supabase.table("charts")
-        .select("song_id,play_style,difficulty,level")
-        .eq("id", task["chart_id"])
+        .select("*")
+        .eq("id", chart_id)
         .limit(1)
         .execute()
     )
 
-    if not chart_response.data:
-        return "課題曲に対応する譜面が見つかりません。"
+    charts = chart_response.data
 
-    chart = chart_response.data[0]
+    if not charts:
+        return "課題曲の譜面情報が見つかりませんでした。"
+
+    chart = charts[0]
+    song_id = chart.get("song_id")
+
+    if not song_id:
+        return "譜面に対応する楽曲IDが見つかりませんでした。"
 
     # 楽曲情報を取得
     song_response = (
         supabase.table("songs")
-        .select("title,artist")
-        .eq("id", chart["song_id"])
+        .select("*")
+        .eq("id", song_id)
         .limit(1)
         .execute()
     )
 
-    if not song_response.data:
-        return "課題曲に対応する楽曲が見つかりません。"
+    songs = song_response.data
 
-    song = song_response.data[0]
+    if not songs:
+        return "課題曲の楽曲情報が見つかりませんでした。"
+
+    song = songs[0]
+
+    title = song.get("title", "曲名不明")
+    play_style = chart.get("play_style", "SP")
+    level = chart.get("level", "不明")
+    task_date = task.get("task_date", "日付不明")
 
     return (
-        "【弐寺Bot 課題曲】\n\n"
-        f"曲名：{song['title']}\n"
-        f"アーティスト：{song['artist']}\n"
-        f"譜面：{chart['play_style']} {chart['difficulty']}\n"
-        f"レベル：{chart['level']}\n"
-        f"課題日：{task['task_date']}\n"
-        f"メモ：{task['note'] or 'なし'}"
+        "【現在の課題曲】\n"
+        f"曲名：{title}\n"
+        f"譜面：{play_style} ☆{level}\n"
+        f"登録日：{task_date}"
     )
 
 
+# ==================================================
+# ランダム課題曲を取得
+# ==================================================
+
 def get_random_song():
+    """
+    ☆5・☆6・☆7のSP譜面からランダムに1曲ずつ選ぶ。
+
+    前提:
+      charts に song_id、play_style、level、is_ac_active が存在する。
+      songs に id、title が存在する。
+    """
+
     target_levels = [5, 6, 7]
-    selected_songs = []
+    result_lines = ["【ランダム課題曲】"]
 
     for level in target_levels:
-        chart_response = (
-            supabase.table("charts")
-            .select("id,song_id,play_style,difficulty,level")
-            .eq("play_style", "SP")
-            .eq("level", level)
-            .eq("is_ac_active", True)
-            .execute()
-        )
-
-        charts = chart_response.data
-
-        if not charts:
-            selected_songs.append(
-                f"■ LEVEL {level}\n"
-                "条件に合う譜面が見つかりませんでした。"
+        try:
+            chart_response = (
+                supabase.table("charts")
+                .select("*")
+                .eq("play_style", "SP")
+                .eq("level", level)
+                .eq("is_ac_active", True)
+                .execute()
             )
-            continue
 
-        chart = random.choice(charts)
+            charts = chart_response.data
 
-        song_response = (
-            supabase.table("songs")
-            .select("title,artist")
-            .eq("id", chart["song_id"])
-            .limit(1)
-            .execute()
-        )
+            if not charts:
+                result_lines.append(
+                    f"☆{level}：対象譜面が見つかりませんでした。"
+                )
+                continue
 
-        if not song_response.data:
-            selected_songs.append(
-                f"■ LEVEL {level}\n"
-                "楽曲情報が見つかりませんでした。"
+            chart = random.choice(charts)
+            song_id = chart.get("song_id")
+
+            if not song_id:
+                result_lines.append(
+                    f"☆{level}：楽曲IDが設定されていません。"
+                )
+                continue
+
+            song_response = (
+                supabase.table("songs")
+                .select("*")
+                .eq("id", song_id)
+                .limit(1)
+                .execute()
             )
-            continue
 
-        song = song_response.data[0]
+            songs = song_response.data
 
-        selected_songs.append(
-            f"■ LEVEL {level}\n"
-            f"曲名：{song['title']}\n"
-            f"アーティスト：{song['artist']}\n"
-            f"譜面：{chart['play_style']} {chart['difficulty']}\n"
-            f"レベル：{chart['level']}"
-        )
+            if not songs:
+                result_lines.append(
+                    f"☆{level}：楽曲情報が見つかりませんでした。"
+                )
+                continue
 
-    return "【弐寺Bot ランダム選曲】\n\n" + "\n\n".join(selected_songs)
+            song = songs[0]
+            title = song.get("title", "曲名不明")
+
+            result_lines.append(
+                f"☆{level}：{title}"
+            )
+
+        except Exception:
+            logger.exception(
+                "ランダム課題曲の取得に失敗しました: level=%s",
+                level,
+            )
+
+            result_lines.append(
+                f"☆{level}：取得中にエラーが発生しました。"
+            )
+
+    return "\n".join(result_lines)
+
+
+# ==================================================
+# LINEメッセージ処理
+# ※ handle_message は1回だけ定義する
+# ==================================================
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    # イベントの送信元情報をログに出力
-    app.logger.info(
-        "SOURCE_TYPE: %s",
-        event.source.type
-    )
+    """
+    LINEのテキストメッセージを受信してコマンドを処理する。
+    """
 
-    if event.source.type == "group":
-        app.logger.info(
-            "LINE_GROUP_ID: %s",
-            event.source.group_id
-        )
-    elif event.source.type == "room":
-        app.logger.info(
-            "LINE_ROOM_ID: %s",
-            event.source.room_id
-        )
-    elif event.source.type == "user":
-        app.logger.info(
-            "LINE_USER_ID: %s",
-            event.source.user_id
-        )
+    source = event.source
+    source_type = getattr(source, "type", "unknown")
 
+    group_id = getattr(source, "group_id", None)
+    room_id = getattr(source, "room_id", None)
+    user_id = getattr(source, "user_id", None)
+
+    # グループID取得用ログ
+    logger.info("SOURCE_TYPE: %s", source_type)
+
+    if group_id:
+        logger.info("LINE_GROUP_ID: %s", group_id)
+
+    if room_id:
+        logger.info("LINE_ROOM_ID: %s", room_id)
+
+    if user_id:
+        logger.info("LINE_USER_ID: %s", user_id)
+
+    # メッセージ本文
     user_text = event.message.text.strip()
 
-    # 以下は既存のコマンド処理をそのまま残す
-    
+    logger.info("Received LINE text message")
+
+    # ----------------------------------------------
+    # ヘルプ
+    # ----------------------------------------------
+
     if user_text == "!ヘルプ":
-        reply_text = (
-            "【弐寺Bot コマンド一覧】\n"
-            "!ヘルプ：コマンド一覧\n"
-            "!課題曲：現在の課題曲を確認\n"
-            "!課題曲ランダム：ランダムに譜面を選ぶ"
+        response_text = (
+            "【IIDX課題曲Bot コマンド一覧】\n\n"
+            "!ヘルプ\n"
+            "コマンド一覧を表示します。\n\n"
+            "!課題曲\n"
+            "このグループの最新課題曲を表示します。\n\n"
+            "!課題曲ランダム\n"
+            "☆5・☆6・☆7のランダム課題曲を表示します。"
         )
+
+    # ----------------------------------------------
+    # 最新の課題曲
+    # ----------------------------------------------
 
     elif user_text == "!課題曲":
         try:
-            reply_text = get_task_song()
+            response_text = get_task_song(group_id)
+
         except Exception:
-            app.logger.exception("Supabase task retrieval failed")
-            reply_text = "課題曲の取得中にエラーが発生しました。"
+            logger.exception("課題曲の取得に失敗しました")
+            response_text = (
+                "課題曲の取得中にエラーが発生しました。\n"
+                "管理者はRenderのログを確認してください。"
+            )
+
+    # ----------------------------------------------
+    # ランダム課題曲
+    # ----------------------------------------------
 
     elif user_text == "!課題曲ランダム":
         try:
-            reply_text = get_random_song()
+            response_text = get_random_song()
+
         except Exception:
-            app.logger.exception("Random song retrieval failed")
-            reply_text = "ランダム選曲中にエラーが発生しました。"
+            logger.exception("ランダム課題曲の取得に失敗しました")
+            response_text = (
+                "ランダム課題曲の取得中にエラーが発生しました。\n"
+                "管理者はRenderのログを確認してください。"
+            )
+
+    # ----------------------------------------------
+    # 対象外のメッセージ
+    # ----------------------------------------------
 
     else:
         return
 
-    configuration = Configuration(
-        access_token=channel_access_token
+    # ----------------------------------------------
+    # LINEに返信
+    # ----------------------------------------------
+
+    reply_message(
+        event.reply_token,
+        response_text,
     )
 
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
 
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply_text)],
-            )
-        )
+# ==================================================
+# ローカル実行用
+# Renderでは通常、Gunicornから起動する
+# ==================================================
+
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+    )
