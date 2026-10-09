@@ -158,6 +158,13 @@ def get_random_song():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    # LINEグループIDをログに記録
+    if event.source.type == "group":
+        app.logger.info(
+            "LINE_GROUP_ID: %s",
+            event.source.group_id
+        )
+
     user_text = event.message.text.strip()
 
     if user_text == "!ヘルプ":
