@@ -156,17 +156,35 @@ def get_random_song():
     return "【弐寺Bot ランダム選曲】\n\n" + "\n\n".join(selected_songs)
 
 
+```python
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    # LINEグループIDをログに記録
+    # イベントの送信元情報をログに出力
+    app.logger.info(
+        "SOURCE_TYPE: %s",
+        event.source.type
+    )
+
     if event.source.type == "group":
         app.logger.info(
             "LINE_GROUP_ID: %s",
             event.source.group_id
         )
+    elif event.source.type == "room":
+        app.logger.info(
+            "LINE_ROOM_ID: %s",
+            event.source.room_id
+        )
+    elif event.source.type == "user":
+        app.logger.info(
+            "LINE_USER_ID: %s",
+            event.source.user_id
+        )
 
     user_text = event.message.text.strip()
 
+    # 以下は既存のコマンド処理をそのまま残す
+    
     if user_text == "!ヘルプ":
         reply_text = (
             "【弐寺Bot コマンド一覧】\n"
