@@ -33,8 +33,6 @@ supabase = create_client(supabase_url, supabase_key)
 def home():
     return "弐寺Bot is running!"
 
-
-```python
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
