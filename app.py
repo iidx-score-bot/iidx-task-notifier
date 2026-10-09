@@ -155,8 +155,6 @@ def get_random_song():
 
     return "【弐寺Bot ランダム選曲】\n\n" + "\n\n".join(selected_songs)
 
-
-```python
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     # イベントの送信元情報をログに出力
