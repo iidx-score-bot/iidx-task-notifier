@@ -104,42 +104,58 @@ def get_task_song():
 
 
 def get_random_song():
-    # 登録されている譜面を取得
-    chart_response = (
-        supabase.table("charts")
-        .select("id,song_id,play_style,difficulty,level")
-        .execute()
-    )
+    # レベル5・6・7から1譜面ずつ選ぶ
+    target_levels = [5, 6, 7]
+    selected_songs = []
 
-    charts = chart_response.data
+    for level in target_levels:
+        # 指定レベルの譜面を取得
+        chart_response = (
+            supabase.table("charts")
+            .select("id,song_id,play_style,difficulty,level")
+            .eq("level", level)
+            .execute()
+        )
 
-    if not charts:
-        return "選曲できる譜面が登録されていません。"
+        charts = chart_response.data
 
-    # 譜面からランダムに1件選ぶ
-    chart = random.choice(charts)
+        if not charts:
+            selected_songs.append(
+                f"■ LEVEL {level}\n"
+                "該当する譜面が登録されていません。"
+            )
+            continue
 
-    # 楽曲情報を取得
-    song_response = (
-        supabase.table("songs")
-        .select("title,artist")
-        .eq("id", chart["song_id"])
-        .limit(1)
-        .execute()
-    )
+        # ランダムに1譜面選ぶ
+        chart = random.choice(charts)
 
-    if not song_response.data:
-        return "選択した譜面に対応する楽曲が見つかりません。"
+        # 楽曲情報を取得
+        song_response = (
+            supabase.table("songs")
+            .select("title,artist")
+            .eq("id", chart["song_id"])
+            .limit(1)
+            .execute()
+        )
 
-    song = song_response.data[0]
+        if not song_response.data:
+            selected_songs.append(
+                f"■ LEVEL {level}\n"
+                "楽曲情報が見つかりません。"
+            )
+            continue
 
-    return (
-        "【弐寺Bot ランダム選曲】\n\n"
-        f"曲名：{song['title']}\n"
-        f"アーティスト：{song['artist']}\n"
-        f"譜面：{chart['play_style']} {chart['difficulty']}\n"
-        f"レベル：{chart['level']}"
-    )
+        song = song_response.data[0]
+
+        selected_songs.append(
+            f"■ LEVEL {level}\n"
+            f"曲名：{song['title']}\n"
+            f"アーティスト：{song['artist']}\n"
+            f"譜面：{chart['play_style']} {chart['difficulty']}\n"
+            f"レベル：{chart['level']}"
+        )
+
+    return "【弐寺Bot 課題曲】\n\n" + "\n\n".join(selected_songs)
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
