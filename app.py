@@ -34,19 +34,50 @@ def home():
     return "弐寺Bot is running!"
 
 
+```python
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+
+    app.logger.info("LINE webhook received")
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         app.logger.warning("LINE signature verification failed")
         abort(400)
+    except Exception:
+        app.logger.exception("LINE webhook processing failed")
+        abort(500)
 
     return "OK"
 
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event):
+    # イベントの送信元をログに出力
+    app.logger.info("SOURCE_TYPE: %s", event.source.type)
+
+    if event.source.type == "group":
+        app.logger.info(
+            "LINE_GROUP_ID: %s",
+            event.source.group_id
+        )
+    elif event.source.type == "room":
+        app.logger.info(
+            "LINE_ROOM_ID: %s",
+            event.source.room_id
+        )
+    elif event.source.type == "user":
+        app.logger.info(
+            "LINE_USER_ID: %s",
+            event.source.user_id
+        )
+
+    user_text = event.message.text.strip()
+
+    # ここから下は、既存のコマンド処理を残す
 
 def get_task_song():
     # 最新の課題曲を取得
