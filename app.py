@@ -11,7 +11,7 @@ TextMessage,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
-app = Flask(**name**)
+app = Flask(__name__)
 
 channel_secret = os.environ.get("LINE_CHANNEL_SECRET", "")
 channel_access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
