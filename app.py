@@ -32,6 +32,21 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    user_text = event.message.text.strip()
+
+    if user_text == "!ヘルプ":
+        reply_text = (
+            "【弐寺Bot コマンド一覧】\n"
+            "!ヘルプ：コマンド一覧\n"
+            "!課題曲：課題曲を確認"
+        )
+
+    elif user_text == "!課題曲":
+        reply_text = "課題曲データは準備中です。"
+
+    else:
+        return
+
     configuration = Configuration(
         access_token=channel_access_token
     )
@@ -42,11 +57,7 @@ def handle_message(event):
         line_bot_api.reply_message(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[
-                    TextMessage(
-                        text="弐寺Botがメッセージを受信しました！"
-                    )
-                ],
+                messages=[TextMessage(text=reply_text)],
             )
         )
 
