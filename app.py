@@ -104,16 +104,16 @@ def get_task_song():
 
 
 def get_random_song():
-    # レベル5・6・7から1譜面ずつ選ぶ
     target_levels = [5, 6, 7]
     selected_songs = []
 
     for level in target_levels:
-        # 指定レベルの譜面を取得
         chart_response = (
             supabase.table("charts")
             .select("id,song_id,play_style,difficulty,level")
+            .eq("play_style", "SP")
             .eq("level", level)
+            .eq("is_ac_active", True)
             .execute()
         )
 
@@ -122,14 +122,12 @@ def get_random_song():
         if not charts:
             selected_songs.append(
                 f"■ LEVEL {level}\n"
-                "該当する譜面が登録されていません。"
+                "条件に合う譜面が見つかりませんでした。"
             )
             continue
 
-        # ランダムに1譜面選ぶ
         chart = random.choice(charts)
 
-        # 楽曲情報を取得
         song_response = (
             supabase.table("songs")
             .select("title,artist")
@@ -141,7 +139,7 @@ def get_random_song():
         if not song_response.data:
             selected_songs.append(
                 f"■ LEVEL {level}\n"
-                "楽曲情報が見つかりません。"
+                "楽曲情報が見つかりませんでした。"
             )
             continue
 
@@ -155,7 +153,7 @@ def get_random_song():
             f"レベル：{chart['level']}"
         )
 
-    return "【弐寺Bot 課題曲】\n\n" + "\n\n".join(selected_songs)
+    return "【弐寺Bot ランダム選曲】\n\n" + "\n\n".join(selected_songs)
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
