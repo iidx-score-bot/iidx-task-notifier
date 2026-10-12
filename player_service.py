@@ -12,24 +12,15 @@ def register_player(
     if not line_user_id:
         raise ValueError("LINEユーザーIDがありません")
 
-    # LINEユーザーIDで登録済みか確認
     result = (
         supabase.table("players")
-        .select("id, line_user_id, display_name")
-        .eq("line_user_id", line_user_id)
-        .execute()
-    )
-
-    if result.data:
-        return result.data[0]
-
-    # 未登録の場合は新規登録
-    result = (
-        supabase.table("players")
-        .insert({
-            "line_user_id": line_user_id,
-            "display_name": display_name,
-        })
+        .upsert(
+            {
+                "line_user_id": line_user_id,
+                "display_name": display_name,
+            },
+            on_conflict="line_user_id",
+        )
         .execute()
     )
 
@@ -37,7 +28,7 @@ def register_player(
 
 
 def get_player(supabase: Client, line_user_id: str):
-    """LINEユーザーIDから登録済みプレイヤーを取得する。"""
+    """LINEユーザーIDからプレイヤーを取得する。"""
 
     if not line_user_id:
         return None
@@ -46,6 +37,7 @@ def get_player(supabase: Client, line_user_id: str):
         supabase.table("players")
         .select("id, line_user_id, display_name")
         .eq("line_user_id", line_user_id)
+        .limit(1)
         .execute()
     )
 
