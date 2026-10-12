@@ -1,0 +1,57 @@
+
+name: Test Player Progress
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install supabase
+
+      - name: Run read-only tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          from supabase import create_client
+          from player_service import get_player
+          from progress_service import get_task_progress
+
+          supabase = create_client(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SECRET_KEY"],
+          )
+
+          player = get_player(
+              supabase,
+              "test_nonexistent_user",
+          )
+          assert player is None
+          print("PASS: get_player")
+
+          progress = get_task_progress(
+              supabase,
+              -1,
+          )
+          assert progress == []
+          print("PASS: get_task_progress")
+
+          print("All read-only tests passed")
+          PY
