@@ -378,7 +378,7 @@ def handle_message(event):
     # プレイヤー参加登録
     # ----------------------------------------------
 
-        elif user_text == "!参加":
+    elif user_text == "!参加":
         if group_id != LINE_GROUP_ID:
             response_text = (
                 "このグループでは参加登録できません。"
