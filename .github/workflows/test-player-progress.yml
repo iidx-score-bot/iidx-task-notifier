@@ -1,8 +1,13 @@
 
 name: Test Player Progress
 
+
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - taiga/feature-player-progress
+
 
 permissions:
   contents: read
