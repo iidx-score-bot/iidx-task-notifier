@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: pip install supabase
 
+      - name: Check Python syntax
+        run: |
+          python -m py_compile app.py
+          python -m py_compile player_service.py
+          python -m py_compile progress_service.py
+
       - name: Run read-only tests
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
