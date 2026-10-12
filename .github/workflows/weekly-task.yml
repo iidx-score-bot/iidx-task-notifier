@@ -3,7 +3,7 @@ name: Weekly IIDX Task Notification
 on:
   schedule:
     # 毎週金曜日 16:30 JST（07:30 UTC）
-    - cron: "30 7 * * 5"
+    - cron: "30 6 * * 1"
 
   # GitHub画面から手動実行できるようにする
   workflow_dispatch:
@@ -30,4 +30,4 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_GROUP_ID: ${{ secrets.LINE_GROUP_ID }}
-        run: python weekly_task.py
+        run: python weekly_post.py
