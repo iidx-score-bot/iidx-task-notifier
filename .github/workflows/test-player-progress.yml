@@ -34,6 +34,10 @@ jobs:
           python -m py_compile player_service.py
           python -m py_compile progress_service.py
 
+      - name: Test join command
+        run: |
+          python -m unittest test_join_command.py -v
+
       - name: Run read-only tests
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
