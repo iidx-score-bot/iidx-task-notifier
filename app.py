@@ -4,6 +4,7 @@ import logging
 
 from flask import Flask, request, abort
 from supabase import create_client
+from player_service import register_player, get_player
 
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -45,6 +46,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 
+LINE_GROUP_ID = os.environ.get("LINE_GROUP_ID")
 
 # ==================================================
 # LINE / Supabase クライアント
@@ -64,6 +66,8 @@ if not SUPABASE_URL:
 if not SUPABASE_SECRET_KEY:
     raise RuntimeError("SUPABASE_SECRET_KEY が設定されていません")
 
+if not LINE_GROUP_ID:
+    raise RuntimeError("LINE_GROUP_ID が設定されていません")
 
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -345,8 +349,6 @@ def handle_message(event):
     if room_id:
         logger.info("LINE_ROOM_ID: %s", room_id)
 
-    if user_id:
-        logger.info("LINE_USER_ID: %s", user_id)
 
     # メッセージ本文
     user_text = event.message.text.strip()
@@ -365,8 +367,55 @@ def handle_message(event):
             "!課題曲\n"
             "このグループの最新課題曲を表示します。\n\n"
             "!課題曲ランダム\n"
-            "☆5・☆6・☆7のランダム課題曲を表示します。"
+            "☆5・☆6・☆7のランダム課題曲を表示します。\n\n"
+            "!参加\n"
+            "プレイヤーとして登録します。"
+
         )
+
+    
+    # ----------------------------------------------
+    # プレイヤー参加登録
+    # ----------------------------------------------
+
+        elif user_text == "!参加":
+        if group_id != LINE_GROUP_ID:
+            response_text = (
+                "このグループでは参加登録できません。"
+            )
+
+        elif not user_id:
+            response_text = (
+                "LINEユーザーIDを取得できませんでした。"
+            )
+
+        else:
+            try:
+                existing_player = get_player(
+                    supabase,
+                    user_id,
+                )
+
+                if existing_player:
+                    response_text = (
+                        "すでにプレイヤー登録されています。"
+                    )
+                else:
+                    register_player(
+                        supabase,
+                        user_id,
+                    )
+                    response_text = (
+                        "プレイヤー登録が完了しました！"
+                    )
+
+            except Exception:
+                logger.exception(
+                    "プレイヤー登録に失敗しました"
+                )
+                response_text = (
+                    "プレイヤー登録中にエラーが発生しました。"
+                )
 
     # ----------------------------------------------
     # 最新の課題曲
